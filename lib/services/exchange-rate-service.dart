@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 class ExchangeRateService {
   static ExchangeRateService? _instance;
 
+  String server = "http://192.168.32.8:8080";
+
   //Ensure there is one of Exchange rate service running
   static ExchangeRateService? getInstance() {
     _instance ??= ExchangeRateService();
@@ -13,7 +15,7 @@ class ExchangeRateService {
 
   //Retrieve exchange rates from api server
   Future<dynamic> fetchExchangeRates() async {
-    final response = await http.get(Uri.parse('https://192.168.32.8:8080/taux'));
+    final response = await http.get(Uri.parse('${server}/taux'));
     if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
@@ -140,13 +142,11 @@ class ExchangeRateService {
 
   //Refresh exchange rates from the api server
   void refreshExchangeRates() async {
-    final response =
-    await http.get(Uri.parse('http://192.168.32.8:8080/taux/refresh'));
+    final response = await http.get(Uri.parse('${server}/taux/refresh'));
     if (response.statusCode == 200) {
       // Update the exchange rate data in your app's state
     } else {
       throw Exception('Failed to refresh currency rates');
     }
   }
-
 }
