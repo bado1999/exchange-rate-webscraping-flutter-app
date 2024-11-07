@@ -1,17 +1,19 @@
 import 'package:challenge/services/exchange-rate-service.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:http/http.dart' as http;
 import 'package:workmanager/workmanager.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  //Initialize the workmanager
   Workmanager().initialize(
     callbackDispatcher,
     isInDebugMode: true,
   );
+
+  //Register a task that runs every 12 hours to refresh exchange rates
   Workmanager().registerPeriodicTask(
     "exchangeRateRefresher",
     "refreshExchangeRates",
@@ -22,21 +24,12 @@ void main() {
   runApp(const MyApp());
 }
 
+//A callback that will be called in the background
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    refreshExchangeRates();
+    ExchangeRateService.getInstance()?.refreshExchangeRates();
     return Future.value(true);
   });
-}
-
-void refreshExchangeRates() async {
-  final response =
-      await http.get(Uri.parse('http://localhost:8080/taux/refresh'));
-  if (response.statusCode == 200) {
-    // Update the exchange rate data in your app's state
-  } else {
-    throw Exception('Failed to refresh currency rates');
-  }
 }
 
 class MyApp extends StatelessWidget {
@@ -68,18 +61,21 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<dynamic> currencyRates = [];
   Set<String> companies = {};
+  Set<String> fromCurrencies = {};
+  Set<String> toCurrencies = {};
   String selectedCompany = '';
-  String fromCurrency = '';
-  String toCurrency = '';
+  String selectedFromCurrency = '';
+  String selectedToCurrency = '';
   bool hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchCurrencyRates();
+    _fetchExchangeRates();
   }
 
-  Future<void> _fetchCurrencyRates() async {
+  //Fetch exchange rates from the servers
+  Future<void> _fetchExchangeRates() async {
     final List<dynamic> exchangeRates;
     try {
       exchangeRates =
@@ -91,8 +87,9 @@ class _HomePageState extends State<HomePage> {
             .toSet()
             .cast<String>();
         selectedCompany = companies.first;
-        fromCurrency = exchangeRates.first['from_currency'];
-        toCurrency = exchangeRates.first['to_currency'];
+        selectedFromCurrency = ''; // Clear selected from currency
+        selectedToCurrency = ''; // Clear selected to currency
+        _updateCurrencyFilters();
         hasError = false;
       });
     } catch (e) {
@@ -103,6 +100,18 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  //Update the currency filters
+  void _updateCurrencyFilters() {
+    // Filter currencies based on the selected company
+    final companyRates =
+        currencyRates.where((rate) => rate['company_name'] == selectedCompany);
+    fromCurrencies =
+        companyRates.map((rate) => rate['from_currency']).toSet().cast();
+    toCurrencies =
+        companyRates.map((rate) => rate['to_currency']).toSet().cast();
+  }
+
+  //Show a message to indicate failure to fetch exchange rates from the server
   void _showErrorToast() {
     Fluttertoast.showToast(
       msg: "Error fetching exchange rates",
@@ -119,61 +128,121 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Currency Exchange Rates'),
+        title: const Text('Currency Exchange Rates'),
       ),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
+                // Company dropdown with border
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: DropdownButton<String>(
-                    value: selectedCompany,
+                    value: selectedCompany.isEmpty ? null : selectedCompany,
                     onChanged: (value) {
                       setState(() {
                         selectedCompany = value!;
+                        _updateCurrencyFilters();
+                        selectedFromCurrency = '';
+                        selectedToCurrency = '';
                       });
                     },
                     items: companies.map((company) {
                       return DropdownMenuItem<String>(
                         value: company,
-                        child: Text(company),
+                        child: Text(
+                          company,
+                          overflow: TextOverflow.fade,
+                        ),
                       );
                     }).toList(),
+                    isExpanded: true,
+                    underline: const SizedBox.shrink(),
+                    hint: const Text('Select Company'),
                   ),
                 ),
-                const SizedBox(width: 16.0),
-                Expanded(
-                  child: TextField(
-                    onChanged: (value) {
-                      setState(() {
-                        fromCurrency = value;
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      hintText: 'From Currency',
+                const SizedBox(height: 16.0),
+
+                // From and To Currency dropdowns with border
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(8.0),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: DropdownButton<String>(
+                          value: selectedFromCurrency.isEmpty
+                              ? null
+                              : selectedFromCurrency,
+                          onChanged: (value) {
+                            setState(() {
+                              selectedFromCurrency = value!;
+                            });
+                          },
+                          items: fromCurrencies.map((fromCurrency) {
+                            return DropdownMenuItem<String>(
+                              value: fromCurrency,
+                              child: Text(
+                                fromCurrency,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          hint: const Text('From Currency'),
+                          isExpanded: true,
+                          underline: const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 16.0),
-                Expanded(
-                  child: TextField(
-                    onChanged: (value) {
-                      setState(() {
-                        toCurrency = value;
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      hintText: 'To Currency',
+                    const SizedBox(width: 16.0),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(8.0),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: DropdownButton<String>(
+                          value: selectedToCurrency.isEmpty
+                              ? null
+                              : selectedToCurrency,
+                          onChanged: (value) {
+                            setState(() {
+                              selectedToCurrency = value!;
+                            });
+                          },
+                          items: toCurrencies.map((toCurrency) {
+                            return DropdownMenuItem<String>(
+                              value: toCurrency,
+                              child: Text(
+                                toCurrency,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          hint: const Text('To Currency'),
+                          isExpanded: true,
+                          underline: const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
           ),
           Expanded(
             child: SingleChildScrollView(
+                child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columns: const [
@@ -189,22 +258,27 @@ class _HomePageState extends State<HomePage> {
                   ]);
                 }).toList(),
               ),
-            ),
+            )),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _fetchCurrencyRates,
+        onPressed: _fetchExchangeRates,
         child: const Icon(Icons.refresh),
       ),
     );
   }
 
+  //Filter exchange rates by the origin and destination currencies
   List<dynamic> _filteredRates() {
     return currencyRates
         .where((rate) => rate['company_name'] == selectedCompany)
-        .where((rate) => rate['from_currency'].contains(fromCurrency))
-        .where((rate) => rate['to_currency'].contains(toCurrency))
+        .where((rate) =>
+            selectedFromCurrency.isEmpty ||
+            rate['from_currency'] == selectedFromCurrency)
+        .where((rate) =>
+            selectedToCurrency.isEmpty ||
+            rate['to_currency'] == selectedToCurrency)
         .toList();
   }
 }
