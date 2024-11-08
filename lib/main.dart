@@ -4,32 +4,37 @@ import 'dart:async';
 import 'package:workmanager/workmanager.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
+//A callback that will be called in the background
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) {
+    print("Refresh task running");
+    ExchangeRateService.getInstance()?.refreshExchangeRates();
+    return Future.value(true);
+  });
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   //Initialize the workmanager
   Workmanager().initialize(
     callbackDispatcher,
-    isInDebugMode: true,
+    isInDebugMode: false,
   );
 
   //Register a task that runs every 12 hours to refresh exchange rates
-  Workmanager().registerPeriodicTask(
-    "exchangeRateRefresher",
-    "refreshExchangeRates",
-    initialDelay: const Duration(seconds: 10),
-    frequency: const Duration(hours: 12),
-  );
+  Workmanager()
+      .registerPeriodicTask("exchangeRateRefresher", "refreshExchangeRates",
+          initialDelay: const Duration(seconds: 10),
+          frequency: const Duration(minutes: 5),
+          constraints: Constraints(
+            networkType: NetworkType.connected,
+          ),
+          backoffPolicy: BackoffPolicy.linear,
+          backoffPolicyDelay: const Duration(seconds: 15));
 
   runApp(const MyApp());
-}
-
-//A callback that will be called in the background
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    ExchangeRateService.getInstance()?.refreshExchangeRates();
-    return Future.value(true);
-  });
 }
 
 class MyApp extends StatelessWidget {
@@ -40,6 +45,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Exchange Rates',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
@@ -67,6 +73,7 @@ class _HomePageState extends State<HomePage> {
   String selectedFromCurrency = '';
   String selectedToCurrency = '';
   bool hasError = false;
+  bool isLoading = false; // Track the loading state
 
   @override
   void initState() {
@@ -74,8 +81,11 @@ class _HomePageState extends State<HomePage> {
     _fetchExchangeRates();
   }
 
-  //Fetch exchange rates from the servers
+  // Fetch exchange rates from the servers
   Future<void> _fetchExchangeRates() async {
+    setState(() {
+      isLoading = true; // Start loading
+    });
     final List<dynamic> exchangeRates;
     try {
       exchangeRates =
@@ -95,14 +105,17 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       setState(() {
         hasError = true;
+        _showErrorToast();
       });
-      _showErrorToast();
+    } finally {
+      setState(() {
+        isLoading = false; // Stop loading
+      });
     }
   }
 
-  //Update the currency filters
+  // Update the currency filters
   void _updateCurrencyFilters() {
-    // Filter currencies based on the selected company
     final companyRates =
         currencyRates.where((rate) => rate['company_name'] == selectedCompany);
     fromCurrencies =
@@ -111,7 +124,7 @@ class _HomePageState extends State<HomePage> {
         companyRates.map((rate) => rate['to_currency']).toSet().cast();
   }
 
-  //Show a message to indicate failure to fetch exchange rates from the server
+  // Show a message to indicate failure to fetch exchange rates from the server
   void _showErrorToast() {
     Fluttertoast.showToast(
       msg: "Error fetching exchange rates",
@@ -263,13 +276,17 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _fetchExchangeRates,
-        child: const Icon(Icons.refresh),
+        onPressed: isLoading ? null : _fetchExchangeRates,
+        child: isLoading
+            ? const CircularProgressIndicator(
+                color: Colors.black,
+              )
+            : const Icon(Icons.refresh),
       ),
     );
   }
 
-  //Filter exchange rates by the origin and destination currencies
+  // Filter exchange rates by the origin and destination currencies
   List<dynamic> _filteredRates() {
     return currencyRates
         .where((rate) => rate['company_name'] == selectedCompany)

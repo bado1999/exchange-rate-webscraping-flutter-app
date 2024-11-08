@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -5,7 +6,7 @@ import 'package:http/http.dart' as http;
 class ExchangeRateService {
   static ExchangeRateService? _instance;
 
-  String server = "http://192.168.32.8:8080";
+  String server = "http://10.0.2.2:8080";
 
   //Ensure there is one of Exchange rate service running
   static ExchangeRateService? getInstance() {
@@ -15,11 +16,15 @@ class ExchangeRateService {
 
   //Retrieve exchange rates from api server
   Future<dynamic> fetchExchangeRates() async {
-    final response = await http.get(Uri.parse('${server}/taux'));
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    } else {
-      throw Exception('Failed to load currency rates');
+    try {
+      final response = await http.get(Uri.parse('$server/taux'));
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to load currency rates');
+      }
+    } catch (e) {
+      rethrow;
     }
 
     /*return [
@@ -142,11 +147,17 @@ class ExchangeRateService {
 
   //Refresh exchange rates from the api server
   void refreshExchangeRates() async {
-    final response = await http.get(Uri.parse('${server}/taux/refresh'));
-    if (response.statusCode == 200) {
-      // Update the exchange rate data in your app's state
-    } else {
-      throw Exception('Failed to refresh currency rates');
+    try {
+      final response = await http.get(Uri.parse('$server/taux/refresh'));
+      if (response.statusCode == 200) {
+        // Exchange rates refreshed successfully
+        print("Exchange rates refreshed successfully");
+      } else {
+        throw Exception('Failed to refresh currency rates');
+      }
+    } catch (e) {
+      print("Refresh failed");
+      rethrow;
     }
   }
 }
